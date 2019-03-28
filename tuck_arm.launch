@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<launch>
+    <node pkg="baxter_tools" type="enable_robot.py" name="enable_robot.py" args="-e" output="screen"/>
+    <node pkg="baxter_tools" type="tuck_arms.py" name="tuck_arms" args="-u" output="screen"/>
+</launch>
