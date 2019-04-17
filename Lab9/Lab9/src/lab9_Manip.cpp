@@ -2,6 +2,7 @@
 // uses right and left arm trajectory action servers to send robot to a hard-coded pre pose
 
 #include <ros/ros.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <actionlib/client/simple_action_client.h>
 #include <actionlib/client/terminal_state.h>
 #include <Lab9/baxter_trajectory_streamer.h>
@@ -9,17 +10,49 @@
 #include <baxter_core_msgs/EndEffectorState.h>
 #include <baxter_core_msgs/EndEffectorCommand.h>
 #include <baxter_fk_ik/baxter_kinematics.h>  //Baxter kinematics
+#include <actionlib/client/simple_action_client.h>
+#include <actionlib/client/terminal_state.h>
+#include <object_finder/objectFinderAction.h>
+#include <object_manipulation_properties/object_ID_codes.h>
+
+#include <Eigen/Eigen>
+#include <Eigen/Dense>
+#include <Eigen/Geometry>
 
 using namespace std;
 #define VECTOR_DIM 7 // e.g., a 7-dof vector
 
 int g_done_count=0;
-
 void rightArmDoneCb(const actionlib::SimpleClientGoalState& state,
         const Lab9::trajResultConstPtr& result) {
     ROS_INFO(" rtArmDoneCb: server responded with state [%s]", state.toString().c_str());
     ROS_INFO("got return val = %d", result->return_val);
     g_done_count++;
+}
+
+geometry_msgs::PoseStamped g_perceived_object_pose;
+int g_found_object_code;
+bool objectFound_ = false;
+void objectFinderDoneCb(const actionlib::SimpleClientGoalState& state, const object_finder::objectFinderResultConstPtr& result) {
+    ROS_INFO(" objectFinderDoneCb: server responded with state [%s]", state.toString().c_str());
+    g_found_object_code=result->found_object_code;
+    ROS_INFO("got object code response = %d; ",g_found_object_code);
+    if (g_found_object_code==object_finder::objectFinderResult::OBJECT_FOUND) {
+        ROS_INFO("found object!");
+        g_perceived_object_pose= result->object_pose;
+        ROS_INFO("got pose x,y,z = %f, %f, %f",g_perceived_object_pose.pose.position.x,
+                 							   g_perceived_object_pose.pose.position.y,
+                 							   g_perceived_object_pose.pose.position.z);
+
+        ROS_INFO("got quaternion x,y,z, w = %f, %f, %f, %f",g_perceived_object_pose.pose.orientation.x,
+                 											g_perceived_object_pose.pose.orientation.y,
+                 											g_perceived_object_pose.pose.orientation.z,
+                 											g_perceived_object_pose.pose.orientation.w);
+        objectFound_ = true;
+    } else {
+        ROS_WARN("object not found!");
+        objectFound_ = false;
+    }
 }
 
 void sendTraJ(std::vector<Eigen::VectorXd> des_path_right, Baxter_traj_streamer baxter_traj_streamer, actionlib::SimpleActionClient<Lab9::trajAction> &right_arm_action_client) {
@@ -104,6 +137,19 @@ int main(int argc, char** argv) {
         ros::spinOnce();  //the baxter_traj_streamer needs spins for its updates
         ros::Duration(0.01).sleep();
     }       
+    
+    actionlib::SimpleActionClient<object_finder::objectFinderAction> object_finder_ac("object_finder_action_service", true);
+    
+    // attempt to connect to the server:
+    ROS_INFO("waiting for server: ");
+    server_exists = false;
+    while ((!server_exists)&&(ros::ok())) {
+        server_exists = object_finder_ac.waitForServer(ros::Duration(0.5)); // 
+        ros::spinOnce();
+        ros::Duration(0.5).sleep();
+        ROS_INFO("retrying...");
+    }
+    ROS_INFO("connected to object_finder action server"); // if here, then we connected to the server; 
 
     Eigen::VectorXd q_pre_pose_right;
     Eigen::VectorXd q_vec_right_arm;
@@ -137,57 +183,77 @@ int main(int argc, char** argv) {
     Baxter_IK_solver baxter_ik_solver;
     Eigen::Vector3d n_des,t_des,b_des;
 
-    b_des<<0,0,-1; //tool flange pointing down
-    n_des<<0,0,1; //x-axis pointing forward...arbitrary
-    t_des = b_des.cross(n_des); //consistent right-hand frame
-
-    Eigen::Matrix3d R_des;
-    R_des.col(0) = n_des;
-    R_des.col(1) = t_des;
-    R_des.col(2) = b_des;
-
     Eigen::Affine3d a_tool_des; // expressed in DH frame  
-    a_tool_des.linear() = R_des;
-
-    double xVal =  0.7; //WHERE WE DO VISION TODO
-    double yVal = -0.2;
-    double zVal =  -0.2;
-
-    Eigen::Vector3d p_des;
-    p_des[0] = xVal;    //X-Val
-    p_des[1] = yVal;    //Y-Val
-    p_des[2] = zVal;    //Z-Val
-
-    a_tool_des.translation() = p_des;
-
-    std::vector<Vectorq7x1> q_solns;
-    int nsolns = baxter_ik_solver.ik_solve_approx_wrt_torso(a_tool_des, q_solns);
-
-    q_vec_right_arm = baxter_traj_streamer.get_q_vec_right_arm_Xd();
-
-    if(nsolns > 0) {
-        grip_pose = pickCorrectJoints(q_solns, q_vec_right_arm);
-    } else {
-        ROS_WARN("Nah dude, no solutions");
-        return 0;
-    }
-
-    a_tool_des.translation()[2] += 0.3;
-    nsolns = baxter_ik_solver.ik_solve_approx_wrt_torso(a_tool_des, q_solns);
-
-    if(nsolns > 0) {
-        approach_pose = pickCorrectJoints(q_solns, q_vec_right_arm);
-    } else {
-        ROS_WARN("Nah dude, no solutions");
-        return 0;
-    }
-
-    drop_pose     <<  0.0786165153791,-1.34721862696,1.36600989161,1.80933033931,0.360101989956,1.72764586236,-2.31362652333; 
     
-    gripper_publisher_right.publish(gripper_cmd_open); //Open the gripper to start
-    ros::Duration(1.0).sleep();
+    //Sending goal to object finder to find the gearbox bottom
+    object_finder::objectFinderGoal object_finder_goal;
+    object_finder_goal.object_id = ObjectIdCodes::GEARBOX_BOTTOM;
+    object_finder_goal.known_surface_ht = false;
+    
+    object_finder_ac.sendGoal(object_finder_goal,&objectFinderDoneCb); 
+    object_finder_ac.waitForResult();
+    
+    drop_pose <<  0.0786165153791,-1.34721862696,1.36600989161,1.80933033931,0.360101989956,1.72764586236,-2.31362652333; 
+    
+    if(objectFound_) {
+    	//Now g_perceived_object_pose is populated!
+    	
+    	Eigen::Vector3d p_des;
+    	p_des[0] = g_perceived_object_pose.pose.position.x; //X-Val
+    	p_des[1] = g_perceived_object_pose.pose.position.y; //Y-Val
+    	p_des[2] = g_perceived_object_pose.pose.position.z; //Z-Val
+    	a_tool_des.translation() = p_des;
+    	
+    	b_des<<0,0,-1; //tool flange pointing down
+		n_des<<0,0,1; //x-axis pointing forward...arbitrary
+		t_des = b_des.cross(n_des); //consistent right-hand frame
 
-    //while(ros::ok()) {
+		Eigen::Matrix3d R_des;
+		R_des.col(0) = n_des;
+		R_des.col(1) = t_des;
+		R_des.col(2) = b_des;
+		a_tool_des.linear() = R_des;
+		
+		std::vector<Vectorq7x1> q_solns;
+		int nsolns = baxter_ik_solver.ik_solve_approx_wrt_torso(a_tool_des, q_solns);
+
+		q_vec_right_arm = baxter_traj_streamer.get_q_vec_right_arm_Xd();
+
+		if(nsolns > 0) {
+		    grip_pose = pickCorrectJoints(q_solns, q_vec_right_arm);
+		} else {
+		    ROS_WARN("Nah dude, no solutions");
+		    return 0;
+		}
+
+		a_tool_des.translation()[2] += 0.3;
+		nsolns = baxter_ik_solver.ik_solve_approx_wrt_torso(a_tool_des, q_solns);
+
+		if(nsolns > 0) {
+		    approach_pose = pickCorrectJoints(q_solns, q_vec_right_arm);
+		} else {
+		    ROS_WARN("Nah dude, no solutions");
+		    return 0;
+		}
+    	
+    	gripper_publisher_right.publish(gripper_cmd_open); //Open the gripper to start
+    	ros::Duration(1.0).sleep();
+    	
+    	q_vec_right_arm = baxter_traj_streamer.get_q_vec_right_arm_Xd(); //Current pose of Right Arm
+
+        des_path_right.push_back(q_vec_right_arm); //start from current pose
+        des_path_right.push_back(drop_pose);
+        des_path_right.push_back(approach_pose); 
+        des_path_right.push_back(grip_pose); 
+        //sendTraJ(des_path_right, baxter_traj_streamer, right_arm_action_client);
+        des_path_right.clear();
+    	
+    } else {
+    	//Not Found!
+    }
+    
+	/*
+    while(ros::ok()) {
         q_vec_right_arm = baxter_traj_streamer.get_q_vec_right_arm_Xd(); //Current pose of Right Arm
 
         des_path_right.push_back(q_vec_right_arm); //start from current pose
@@ -196,7 +262,7 @@ int main(int argc, char** argv) {
         des_path_right.push_back(grip_pose); 
         sendTraJ(des_path_right, baxter_traj_streamer, right_arm_action_client);
         des_path_right.clear();
-        /*
+        
         //Enable the Gripper
         gripper_publisher_right.publish(gripper_cmd_close);
         ros::Duration(1.0).sleep();
@@ -221,8 +287,8 @@ int main(int argc, char** argv) {
         des_path_right.push_back(grip_pose); 
         des_path_right.push_back(approach_pose); 
         sendTraJ(des_path_right, baxter_traj_streamer, right_arm_action_client);
-        */
-    //}
+    }
+    */
     
     ros::spinOnce();
     return 0;
