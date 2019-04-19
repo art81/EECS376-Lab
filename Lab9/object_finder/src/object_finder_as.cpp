@@ -61,8 +61,8 @@ bool ObjectFinder::find_gearbox_bottom(float surface_height, geometry_msgs::Pose
     Eigen::Vector3f major_axis;
     Eigen::Vector3f centroid;
     
-    //										     xmin, xmax, ymin, ymax, zmin,                   zmax					 z-tolerance (for finding table)
-    bool found_object = pclUtils_.find_plane_fit(0.4,  1,    -0.5, 0.5,  surface_height + 0.005, surface_height + 0.08, 0.001,
+    //										     xmin, xmax, ymin, ymax, zmin,                   zmax		   z-tolerance (for finding table)
+    bool found_object = pclUtils_.find_plane_fit(0.4,  1,    -0.5, 0.5,  surface_height, surface_height + 0.3, 0.001,
             									 plane_normal, plane_dist, major_axis, centroid);
             									 
     if (plane_normal(2) < 0) plane_normal(2) *= -1.0; //in world frame, normal must point UP

@@ -906,6 +906,7 @@ void PclUtils::copy_cloud_xyzrgb_indices(PointCloud<pcl::PointXYZRGB>::Ptr input
 
 void PclUtils::transform_cloud(Eigen::Affine3f A, pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud_ptr,
         pcl::PointCloud<pcl::PointXYZ>::Ptr output_cloud_ptr) {
+    printf("FIRST POINT X: %f", input_cloud_ptr->points[0].x);
     output_cloud_ptr->header = input_cloud_ptr->header;
     output_cloud_ptr->is_dense = input_cloud_ptr->is_dense;
     output_cloud_ptr->width = input_cloud_ptr->width;
@@ -914,10 +915,31 @@ void PclUtils::transform_cloud(Eigen::Affine3f A, pcl::PointCloud<pcl::PointXYZ>
     cout << "transforming npts = " << npts << endl;
     output_cloud_ptr->points.resize(npts);
 
+	int count  = 0;
     //somewhat odd notation: getVector3fMap() reading OR WRITING points from/to a pointcloud, with conversions to/from Eigen
     for (int i = 0; i < npts; ++i) {
+    	/*
+    	double oldX = input_cloud_ptr->points[i].getVector3fMap()(0);
+    	double oldY = input_cloud_ptr->points[i].getVector3fMap()(1);
+    	double oldZ = input_cloud_ptr->points[i].getVector3fMap()(2);
+    
+    	input_cloud_ptr->points[i].getVector3fMap()(0) = oldZ;
+    	input_cloud_ptr->points[i].getVector3fMap()(1) = oldX;
+    	input_cloud_ptr->points[i].getVector3fMap()(2) = oldY;
+    	*/
+    
         output_cloud_ptr->points[i].getVector3fMap() = A * input_cloud_ptr->points[i].getVector3fMap();
+        
+    	Eigen::Vector3f inPoint = input_cloud_ptr->points[i].getVector3fMap();
+    	Eigen::Vector3f outPoint = output_cloud_ptr->points[i].getVector3fMap();
+    	if(!isnan(inPoint(0)) && inPoint(0) < 0.0) {
+    		ROS_WARN("Before transform = %f, %f, %f", inPoint(0), inPoint(1), inPoint(2));
+    		ROS_WARN("After  transform = %f, %f, %f", outPoint(0), outPoint(1), outPoint(2));
+    		count++;
+    	}
     }
+    
+    ROS_WARN("Number of kinect points with x < 0 = %d", count);
 }
 
 void PclUtils::transform_cloud(Eigen::Affine3f A, pcl::PointCloud<pcl::PointXYZRGB>::Ptr input_cloud_ptr,
@@ -1018,7 +1040,7 @@ void PclUtils::kinectCB(const sensor_msgs::PointCloud2ConstPtr& cloud) {
         //pclGenPurposeCloud_ptr_->points[i].getVector3fMap() = pclGenPurposeCloud_ptr_->points[i].getVector3fMap()+offset;   
 
         cout<<"done combing through selected pts"<<endl;   
-     *     */     
+     *     */  
     }
     //pcl::io::savePCDFileASCII ("snapshot.pcd", *g_pclKinect);
     //ROS_INFO("saved PCD image consisting of %d data points to snapshot.pcd",(int) g_pclKinect->points.size ()); 
