@@ -4,6 +4,8 @@
 	
 	<!-- static transforms  -->
 	
-	<node name="from_torso_to_camera_link_static_tf" pkg="tf" type="static_transform_publisher" args="0 0 0 0 0.638 0.009 0.770 head camera_link 1" /> 
+	<!--<node name="from_torso_to_camera_link_static_tf" pkg="tf" type="static_transform_publisher" args="0.13 0.01 0.12 0 0.638 0.009 0.770 head camera_link 1" /> -->
+	
+	<node name="from_torso_to_camera_link_static_tf" pkg="tf" type="static_transform_publisher" args="-0.04 0.02 0.12 0 0.638 0.009 0.770 head camera_link 1" /> 
        
 </launch>

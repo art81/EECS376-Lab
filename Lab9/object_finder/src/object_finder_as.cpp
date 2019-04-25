@@ -61,8 +61,8 @@ bool ObjectFinder::find_gearbox_bottom(float surface_height, geometry_msgs::Pose
     Eigen::Vector3f major_axis;
     Eigen::Vector3f centroid;
     
-    //										     xmin, xmax, ymin, ymax, zmin,                   zmax		   z-tolerance (for finding table)
-    bool found_object = pclUtils_.find_plane_fit(0.4,  1,    -0.5, 0.5,  surface_height, surface_height + 0.3, 0.001,
+    //										     xmin, xmax, ymin, ymax, zmin,                   zmax		   		   z-tolerance (for finding table)
+    bool found_object = pclUtils_.find_plane_fit(0.4,  1,    -0.5, 0.5,  surface_height + 0.05, surface_height + 0.3, 0.001,
             									 plane_normal, plane_dist, major_axis, centroid);
             									 
     if (plane_normal(2) < 0) plane_normal(2) *= -1.0; //in world frame, normal must point UP
@@ -72,7 +72,7 @@ bool ObjectFinder::find_gearbox_bottom(float surface_height, geometry_msgs::Pose
     R.col(2) = plane_normal;
     R.col(1) = plane_normal.cross(major_axis);
     Eigen::Quaternionf quat(R);
-    object_pose.header.frame_id = "base_link";
+    object_pose.header.frame_id = "torso";
     object_pose.pose.position.x = centroid(0);
     object_pose.pose.position.y = centroid(1);
     //the TOY_BLOCK model has its origin in the middle of the block, not the top surface
@@ -115,7 +115,7 @@ bool ObjectFinder::find_toy_block(float surface_height, geometry_msgs::PoseStamp
     //if insufficient points in plane, find_plane_fit returns "false"
     //should do more sanity testing on found_object status
     //hard-coded search bounds based on a block of width 0.035
-    found_object = pclUtils_.find_plane_fit(0.4, 1, -0.5, 0.5, surface_height + 0.025, surface_height + 0.045, 0.001,
+    found_object = pclUtils_.find_plane_fit(0.4, 1, -0.5, 0.5, surface_height + 0.0, surface_height + 0.045, 0.001,
             plane_normal, plane_dist, major_axis, centroid);
     // need more here, if want to distinguish different types of blocks;
     // write a new pclUtils fnc for this. Then set:
@@ -188,7 +188,7 @@ void ObjectFinder::executeCB(const actionlib::SimpleActionServer<object_finder::
         ros::Time tstart = ros::Time::now();
         double table_ht;
         //hard-coded search range: x= [0,1], y= [-0.5,0.5], z=[0.6,1.2] in steps of 0.005
-        table_ht = pclUtils_.find_table_height(0.4, 1, -0.5, 0.5, -1, 1, 0.005);
+        table_ht = pclUtils_.find_table_height(0.4, 1.0, -0.5, 0.5, -0.5, 0.0, 0.005);
         ROS_INFO("table ht: %f", table_ht);
         ros::Time t3 = ros::Time::now();
         surface_height_ = table_ht; //remember this value for potential future use
@@ -200,7 +200,7 @@ void ObjectFinder::executeCB(const actionlib::SimpleActionServer<object_finder::
     switch (object_id) {
         case ObjectIdCodes::COKE_CAN_UPRIGHT:
             //specialized function to find an upright Coke can on a horizontal surface of known height:
-            found_object = find_upright_coke_can(surface_height, object_pose); //special case for Coke can;
+            found_object = find_upright_coke_can(surface_height_, object_pose); //special case for Coke can;
             if (found_object) {
                 ROS_INFO("found upright Coke can!");
                 result_.found_object_code = object_finder::objectFinderResult::OBJECT_FOUND;
@@ -246,7 +246,7 @@ void ObjectFinder::executeCB(const actionlib::SimpleActionServer<object_finder::
             break;
         case ObjectIdCodes::GEARBOX_BOTTOM:
         
-        	found_object = find_gearbox_bottom(surface_height, object_pose);
+        	found_object = find_gearbox_bottom(surface_height_, object_pose);
         	
         	if (found_object) {
                 ROS_INFO("found gearbox bottom!");
@@ -285,7 +285,7 @@ int main(int argc, char** argv) {
             //The direction of the transform returned will be from the target_frame to the source_frame. 
             //Which if applied to data, will transform data in the source_frame into the target_frame. 
             //See tf/CoordinateFrameConventions#Transform_Direction
-            tfListener.lookupTransform("torso", "camera_link", ros::Time(0), stf_kinect_wrt_base);
+            tfListener.lookupTransform("torso", "camera_rgb_optical_frame", ros::Time(0), stf_kinect_wrt_base);
         } catch (tf::TransformException &exception) {
             ROS_WARN("%s; retrying...", exception.what());
             tferr = true;

@@ -30,6 +30,22 @@ void rightArmDoneCb(const actionlib::SimpleClientGoalState& state,
     g_done_count++;
 }
 
+double convertPlanarQuat2Phi(geometry_msgs::Quaternion quaternion) {
+    double quat_z = quaternion.z;
+    double quat_w = quaternion.w;
+    double phi = 2.0 * atan2(quat_z, quat_w); // cheap conversion from quaternion to heading for planar motion
+    return phi;
+}
+
+geometry_msgs::Quaternion convertPlanarPsi2Quaternion(double psi) {
+    geometry_msgs::Quaternion quaternion;
+    quaternion.x = 0.0;
+    quaternion.y = 0.0;
+    quaternion.z = sin(psi / 2.0);
+    quaternion.w = cos(psi / 2.0);
+    return (quaternion);
+}
+
 geometry_msgs::PoseStamped g_perceived_object_pose;
 int g_found_object_code;
 bool objectFound_ = false;
@@ -48,6 +64,15 @@ void objectFinderDoneCb(const actionlib::SimpleClientGoalState& state, const obj
                  											g_perceived_object_pose.pose.orientation.y,
                  											g_perceived_object_pose.pose.orientation.z,
                  											g_perceived_object_pose.pose.orientation.w);
+                 											
+        double angle = convertPlanarQuat2Phi(g_perceived_object_pose.pose.orientation) - 0;//1.57;
+        g_perceived_object_pose.pose.orientation = convertPlanarPsi2Quaternion(angle);
+        
+        ROS_INFO("NEW quaternion x,y,z, w = %f, %f, %f, %f",g_perceived_object_pose.pose.orientation.x,
+                 											g_perceived_object_pose.pose.orientation.y,
+                 											g_perceived_object_pose.pose.orientation.z,
+                 											g_perceived_object_pose.pose.orientation.w);
+        
         objectFound_ = true;
     } else {
         ROS_WARN("object not found!");
@@ -212,7 +237,28 @@ int main(int argc, char** argv) {
 		R_des.col(0) = n_des;
 		R_des.col(1) = t_des;
 		R_des.col(2) = b_des;
-		a_tool_des.linear() = R_des;
+		
+		ROS_INFO("%f, %f, %f", R_des(0,0), R_des(0,1), R_des(0,2));
+		ROS_INFO("%f, %f, %f", R_des(1,0), R_des(1,1), R_des(1,2));
+		ROS_INFO("%f, %f, %f", R_des(2,0), R_des(2,1), R_des(2,2));
+		ROS_INFO("");
+		
+		Eigen::Quaterniond q;
+		q.x() = g_perceived_object_pose.pose.orientation.x;
+		q.y() = g_perceived_object_pose.pose.orientation.y;
+		q.z() = g_perceived_object_pose.pose.orientation.z;
+		q.w() = g_perceived_object_pose.pose.orientation.w;
+		Eigen::Matrix3d R_des2(q);
+		
+		R_des2(2,2) = -1.0;
+		R_des2(2,0) =  1.0;
+		
+		a_tool_des.linear() = R_des2;
+		
+		ROS_INFO("%f, %f, %f", R_des2(0,0), R_des2(0,1), R_des2(0,2));
+		ROS_INFO("%f, %f, %f", R_des2(1,0), R_des2(1,1), R_des2(1,2));
+		ROS_INFO("%f, %f, %f", R_des2(2,0), R_des2(2,1), R_des2(2,2));
+		ROS_INFO("");
 		
 		std::vector<Vectorq7x1> q_solns;
 		int nsolns = baxter_ik_solver.ik_solve_approx_wrt_torso(a_tool_des, q_solns);
@@ -226,7 +272,7 @@ int main(int argc, char** argv) {
 		    return 0;
 		}
 
-		a_tool_des.translation()[2] += 0.3;
+		a_tool_des.translation()[2] += 0.5;
 		nsolns = baxter_ik_solver.ik_solve_approx_wrt_torso(a_tool_des, q_solns);
 
 		if(nsolns > 0) {
@@ -240,25 +286,23 @@ int main(int argc, char** argv) {
     	ros::Duration(1.0).sleep();
     	
     	q_vec_right_arm = baxter_traj_streamer.get_q_vec_right_arm_Xd(); //Current pose of Right Arm
-
-        des_path_right.push_back(q_vec_right_arm); //start from current pose
-        des_path_right.push_back(drop_pose);
-        des_path_right.push_back(approach_pose); 
-        des_path_right.push_back(grip_pose); 
-        //sendTraJ(des_path_right, baxter_traj_streamer, right_arm_action_client);
-        des_path_right.clear();
     	
     } else {
     	//Not Found!
     }
     
-	/*
-    while(ros::ok()) {
+    //while(ros::ok()) {
         q_vec_right_arm = baxter_traj_streamer.get_q_vec_right_arm_Xd(); //Current pose of Right Arm
+        des_path_right.clear();
 
         des_path_right.push_back(q_vec_right_arm); //start from current pose
         des_path_right.push_back(drop_pose);
         des_path_right.push_back(approach_pose); 
+        sendTraJ(des_path_right, baxter_traj_streamer, right_arm_action_client);
+        des_path_right.clear();
+        ros::Duration(2.0).sleep();
+        
+        des_path_right.push_back(approach_pose);
         des_path_right.push_back(grip_pose); 
         sendTraJ(des_path_right, baxter_traj_streamer, right_arm_action_client);
         des_path_right.clear();
@@ -287,8 +331,8 @@ int main(int argc, char** argv) {
         des_path_right.push_back(grip_pose); 
         des_path_right.push_back(approach_pose); 
         sendTraJ(des_path_right, baxter_traj_streamer, right_arm_action_client);
-    }
-    */
+    //}
+    
     
     ros::spinOnce();
     return 0;

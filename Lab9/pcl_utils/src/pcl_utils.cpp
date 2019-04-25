@@ -713,6 +713,7 @@ bool PclUtils::find_plane_fit(double x_min, double x_max, double y_min, double y
     pass.setFilterFieldName("x"); // we will "filter" based on points that lie within some range of z-value
     pass.setFilterLimits(x_min, x_max);
     pass.filter(*cloud_filtered); //fill this cloud with result
+    
     int n_filtered = cloud_filtered->points.size();
     ROS_INFO("num x-filtered pts = %d",n_filtered);
     //pass.filter(*inliers);
@@ -737,6 +738,9 @@ bool PclUtils::find_plane_fit(double x_min, double x_max, double y_min, double y
     fit_points_to_plane(cloud_filtered, plane_normal, plane_dist);    
     major_axis = major_axis_;
     centroid = centroid_;
+    
+    pointcloud_publisher_.publish(*cloud_filtered);
+    
     return ans_valid;
 }
 
@@ -907,7 +911,7 @@ void PclUtils::copy_cloud_xyzrgb_indices(PointCloud<pcl::PointXYZRGB>::Ptr input
 void PclUtils::transform_cloud(Eigen::Affine3f A, pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud_ptr,
         pcl::PointCloud<pcl::PointXYZ>::Ptr output_cloud_ptr) {
     printf("FIRST POINT X: %f", input_cloud_ptr->points[0].x);
-    output_cloud_ptr->header = input_cloud_ptr->header;
+    output_cloud_ptr->header.frame_id = "torso"; //input_cloud_ptr->header;
     output_cloud_ptr->is_dense = input_cloud_ptr->is_dense;
     output_cloud_ptr->width = input_cloud_ptr->width;
     output_cloud_ptr->height = input_cloud_ptr->height;
@@ -933,8 +937,8 @@ void PclUtils::transform_cloud(Eigen::Affine3f A, pcl::PointCloud<pcl::PointXYZ>
     	Eigen::Vector3f inPoint = input_cloud_ptr->points[i].getVector3fMap();
     	Eigen::Vector3f outPoint = output_cloud_ptr->points[i].getVector3fMap();
     	if(!isnan(inPoint(0)) && inPoint(0) < 0.0) {
-    		ROS_WARN("Before transform = %f, %f, %f", inPoint(0), inPoint(1), inPoint(2));
-    		ROS_WARN("After  transform = %f, %f, %f", outPoint(0), outPoint(1), outPoint(2));
+    		//ROS_WARN("Before transform = %f, %f, %f", inPoint(0), inPoint(1), inPoint(2));
+    		//ROS_WARN("After  transform = %f, %f, %f", outPoint(0), outPoint(1), outPoint(2));
     		count++;
     	}
     }
