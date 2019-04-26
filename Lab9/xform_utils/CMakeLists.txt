@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(object_finder)
+project(xform_utils)
 
 find_package(catkin_simple REQUIRED)
 
 #uncomment next line to use OpenCV library
-find_package(OpenCV REQUIRED)
+#find_package(OpenCV REQUIRED)
 
 #uncomment the next 2 lines to use the point-cloud library
-find_package(PCL 1.7 REQUIRED)
-include_directories(${PCL_INCLUDE_DIRS})
+#find_package(PCL 1.7 REQUIRED)
+#include_directories(${PCL_INCLUDE_DIRS})
 
 
 #uncomment the following 4 lines to use the Eigen library
@@ -20,24 +20,24 @@ add_definitions(${EIGEN_DEFINITIONS})
 catkin_simple()
 
 # example boost usage
-find_package(Boost REQUIRED COMPONENTS system thread)
+# find_package(Boost REQUIRED COMPONENTS system thread)
 
 # C++0x support - not quite the same as final C++11!
 # use carefully;  can interfere with point-cloud library
 # SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
 
 # Libraries: uncomment the following and edit arguments to create a new library
-cs_add_library(object_finder_as src/object_finder_as.cpp)   
+cs_add_library(xform_utils src/xform_utils.cpp)   
 
 # Executables: uncomment the following and edit arguments to compile new nodes
 # may add more of these lines for more nodes from the same package
-cs_add_executable(object_finder_main src/object_finder_main.cpp)
-cs_add_executable(example_object_finder_action_client src/example_object_finder_action_client.cpp)
-#cs_add_executable(example_tote_finder_action_client src/example_tote_finder_action_client.cpp)
+cs_add_executable(example_xform_utils src/example_xform_utils.cpp)
+cs_add_executable(example_frame_inversion src/example_frame_inversion.cpp)
+
 #the following is required, if desire to link a node in this package with a library created in this same package
 # edit the arguments to reference the named node and named library within this package
-target_link_libraries(object_finder_main object_finder_as)
-
+target_link_libraries(example_xform_utils xform_utils)
+target_link_libraries(example_frame_inversion xform_utils)
 cs_install()
 cs_export()
     

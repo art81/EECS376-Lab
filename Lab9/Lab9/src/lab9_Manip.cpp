@@ -13,7 +13,7 @@
 #include <actionlib/client/simple_action_client.h>
 #include <actionlib/client/terminal_state.h>
 #include <object_finder/objectFinderAction.h>
-#include <object_manipulation_properties/object_ID_codes.h>
+#include <part_codes/part_codes.h>
 
 #include <Eigen/Eigen>
 #include <Eigen/Dense>
@@ -55,7 +55,7 @@ void objectFinderDoneCb(const actionlib::SimpleClientGoalState& state, const obj
     ROS_INFO("got object code response = %d; ",g_found_object_code);
     if (g_found_object_code==object_finder::objectFinderResult::OBJECT_FOUND) {
         ROS_INFO("found object!");
-        g_perceived_object_pose= result->object_pose;
+        g_perceived_object_pose= result->object_poses[0];
         ROS_INFO("got pose x,y,z = %f, %f, %f",g_perceived_object_pose.pose.position.x,
                  							   g_perceived_object_pose.pose.position.y,
                  							   g_perceived_object_pose.pose.position.z);
@@ -65,8 +65,8 @@ void objectFinderDoneCb(const actionlib::SimpleClientGoalState& state, const obj
                  											g_perceived_object_pose.pose.orientation.z,
                  											g_perceived_object_pose.pose.orientation.w);
                  											
-        double angle = convertPlanarQuat2Phi(g_perceived_object_pose.pose.orientation) - 0;//1.57;
-        g_perceived_object_pose.pose.orientation = convertPlanarPsi2Quaternion(angle);
+        //double angle = convertPlanarQuat2Phi(g_perceived_object_pose.pose.orientation) - 0;//1.57;
+        //g_perceived_object_pose.pose.orientation = convertPlanarPsi2Quaternion(angle);
         
         ROS_INFO("NEW quaternion x,y,z, w = %f, %f, %f, %f",g_perceived_object_pose.pose.orientation.x,
                  											g_perceived_object_pose.pose.orientation.y,
@@ -212,7 +212,7 @@ int main(int argc, char** argv) {
     
     //Sending goal to object finder to find the gearbox bottom
     object_finder::objectFinderGoal object_finder_goal;
-    object_finder_goal.object_id = ObjectIdCodes::GEARBOX_BOTTOM;
+    object_finder_goal.object_id = part_codes::part_codes::GEARBOX_BOTTOM;
     object_finder_goal.known_surface_ht = false;
     
     object_finder_ac.sendGoal(object_finder_goal,&objectFinderDoneCb); 

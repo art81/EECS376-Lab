@@ -1,6 +1,171 @@
 // action server to respond to perception requests
 // Wyatt Newman, 2/2019
-#include <object_finder_as/object_finder.h>
+#include<object_finder/object_finder.h>
+/*
+#include<ros/ros.h>
+#include <actionlib/server/simple_action_server.h>
+#include <pcl_utils/pcl_utils.h>
+#include <pcl/filters/crop_box.h>
+#include <object_finder/objectFinderAction.h>
+#include <xform_utils/xform_utils.h>
+#include <part_codes/part_codes.h>
+
+#include <opencv2/core/utility.hpp>
+#include "opencv2/imgproc.hpp"
+#include "opencv2/imgcodecs.hpp"
+#include <opencv2/highgui/highgui.hpp>
+
+#include "find_tote_fncs.cpp"
+
+
+
+using namespace std;
+using namespace cv;
+
+Eigen::Affine3f g_affine_headcam_wrt_base;
+XformUtils xformUtils;
+//magic numbers for filtering pointcloud points:
+//specify the min and max values, x,y, znd z, for points to retain...
+// as expressed in the robot's torso frame (torso_lift_link)
+//orig wsn numbers:
+/*
+const float MIN_X = 0.4; //include points starting 0.4m in front of robot
+const float MAX_X = 0.8; //include points out to 0.9m in front of robot
+const float MIN_Y = -0.3; //include points starting -0.5m to left of robot
+const float MAX_Y = 0.3; //include points up to 0.5m to right of robot 
+const float MIN_Z = -0.05; //2cm above the table top
+const float MAX_Z = 0.1; //consider points up to this height w/rt torso frame
+
+const float TABLE_TOP_MIN = -0.1;
+const float TABLE_TOP_MAX = 0.2; //0.05;
+*/
+
+//Chris's numbers:
+/*
+const float MIN_X = 0.25; //include points starting 0.4m in front of robot
+const float MAX_X = 0.8; //include points out to 0.9m in front of robot
+const float MIN_Y = -0.7; //include points starting -0.5m to left of robot
+const float MAX_Y = 0.7; //include points up to 0.5m to right of robot
+const float MIN_Z = -0.05; //2cm above the table top
+const float MAX_Z = 0.14; //consider points up to this height w/rt torso frame
+
+const float TABLE_TOP_MIN = -0.1;
+const float TABLE_TOP_MAX = 0.1;
+
+//choose, e.g., resolution of 5mm, so 100x200 image for 0.5m x 1.0m pointcloud
+// adjustable--> image  size
+// try 400 pix/m...works fine, i.e. 2.5mm resolution
+//const float PIXELS_PER_METER = 450.0; //200.0;
+//Chris's value:
+const float PIXELS_PER_METER = 400.0; //200.0;
+
+const float TABLE_GRASP_CLEARANCE = 0.01; //add this much to table  top height for gripper clearance
+
+const float MIN_BLOB_PIXELS = 600; //must have  at least this many pixels to  preserve as a blob; gearbox top/bottom has about 900 pts
+const float MIN_BLOB_AVG_HEIGHT = 5.0; //avg z-height must be  at least this many mm to preserve as blob
+
+
+
+const int Nu = (int) ((MAX_X - MIN_X) * PIXELS_PER_METER);
+const int Nv = (int) ((MAX_Y - MIN_Y) * PIXELS_PER_METER);
+
+Mat_<uchar> g_bw_img(Nu, Nv);
+Mat_<int> g_labelImage(Nu, Nv);
+Mat dst(g_bw_img.size(), CV_8UC3);
+
+//SHOULD move these to class member data
+vector<float> g_x_centroids, g_y_centroids;
+vector<float> g_x_centroids_wrt_robot, g_y_centroids_wrt_robot;
+vector<float> g_avg_z_heights;
+vector<float> g_npts_blobs;
+vector<float> g_orientations;
+//Global Variable matrix to hold quaternions
+vector<geometry_msgs::Quaternion> g_vec_of_quat; 
+
+
+Eigen::Affine3f affine_cam_wrt_torso_;
+
+class ObjectFinder {
+private:
+
+    ros::NodeHandle nh_; // we'll need a node handle; get one upon instantiation
+    actionlib::SimpleActionServer<object_finder::objectFinderAction> object_finder_as_;
+
+    // here are some message types to communicate with our client(s)
+    object_finder::objectFinderGoal goal_; // goal message, received from client
+    object_finder::objectFinderResult result_; // put results here, to be sent back to the client when done w/ goal
+    object_finder::objectFinderFeedback feedback_; // not used in this example; 
+    // would need to use: as_.publishFeedback(feedback_); to send incremental feedback to the client
+
+    //PclUtils pclUtils_;
+    tf::TransformListener* tfListener_;
+    void initializeSubscribers();
+    void initializePublishers();
+
+
+    //specialized function to find an upright Coke can on known height of horizontal surface;
+    // returns true/false for found/not-found, and if found, fills in the object pose
+    //bool find_upright_coke_can(float surface_height, geometry_msgs::PoseStamped &object_pose);
+    //bool find_toy_block(float surface_height, geometry_msgs::PoseStamped &object_pose);
+    //float find_table_height();
+
+    double surface_height_;
+    bool found_surface_height_;
+    bool got_headcam_image_;
+
+
+    vector<int> indices_;
+    //will publish  pointClouds as ROS-compatible messages; create publishers; note topics for rviz viewing
+
+    Eigen::Affine3f affine_cam_wrt_torso_;
+    
+    Eigen::Vector3f major_axis_,centroid_,plane_normal_;
+
+
+
+public:
+    ObjectFinder(); //define the body of the constructor outside of class definition
+
+    ~ObjectFinder(void) {
+    }
+    // Action Interface
+    void executeCB(const actionlib::SimpleActionServer<object_finder::objectFinderAction>::GoalConstPtr& goal);
+    void headcamCB(const sensor_msgs::PointCloud2ConstPtr& cloud);
+
+    XformUtils xformUtils_;
+    ros::Subscriber pointcloud_subscriber_; //use this to subscribe to a pointcloud topic
+    void find_indices_box_filtered(pcl::PointCloud<pcl::PointXYZRGB>::Ptr input_cloud_ptr, Eigen::Vector4f box_pt_min,
+            Eigen::Vector4f box_pt_max, vector<int> &indices);
+    void blob_finder(vector<float> &x_centroids_wrt_robot, vector<float> &y_centroids_wrt_robot,
+            vector<float> &avg_z_heights, vector<float> &npts_blobs);
+    Eigen::Affine3f compute_affine_cam_wrt_torso_lift_link(void);
+    float find_table_height(pcl::PointCloud<pcl::PointXYZRGB>::Ptr input_cloud_ptr, double z_min, double z_max, double dz);
+    void convert_transformed_cloud_to_2D(pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_ptr, vector<int> indices);
+    sensor_msgs::PointCloud2 ros_cloud_, downsampled_cloud_, ros_box_filtered_cloud_, ros_crop_filtered_cloud_, ros_pass_filtered_cloud_; //here are ROS-compatible messages
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr pclCam_clr_ptr_; //(new pcl::PointCloud<pcl::PointXYZRGB>); //pointer for color version of pointcloud
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr downsampled_cloud_ptr_; //(new pcl::PointCloud<pcl::PointXYZRGB>); //ptr to hold filtered Kinect image
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr box_filtered_cloud_ptr_; //(new pcl::PointCloud<pcl::PointXYZRGB>); //ptr to hold filtered Kinect image
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud_ptr_; //(new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr crop_filtered_cloud_ptr_; //(new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr pass_filtered_cloud_ptr_; //(new pcl::PointCloud<pcl::PointXYZRGB>);
+
+    ros::Publisher pubCloud_; // = nh.advertise<sensor_msgs::PointCloud2> ("/pcd", 1);
+    ros::Publisher pubDnSamp_; // = nh.advertise<sensor_msgs::PointCloud2> ("downsampled_pcd", 1);
+    ros::Publisher pubBoxFilt_; // = nh.advertise<sensor_msgs::PointCloud2> ("box_filtered_pcd", 1);  
+    ros::Publisher pubCropFilt_;
+    ros::Publisher pubPassFilt_;
+
+
+
+    bool find_gearbox_top(vector<float> x_centroids_wrt_robot, vector<float> y_centroids_wrt_robot,
+            vector<float> avg_z_heights, vector<float> npts_blobs, float table_height, vector<geometry_msgs::PoseStamped> &object_poses);
+    bool find_totes(vector<float> x_centroids_wrt_robot, vector<float> y_centroids_wrt_robot,
+            vector<float> avg_z_heights, vector<float> npts_blobs, float table_height, vector<geometry_msgs::PoseStamped> &object_poses); 
+    
+    void find_orientation(Eigen::MatrixXf points_mat, float &orientation, geometry_msgs::Quaternion &quaternion);
+    
+};
+*/
 
 ObjectFinder::ObjectFinder() :
 object_finder_as_(nh_, "object_finder_action_service", boost::bind(&ObjectFinder::executeCB, this, _1), false), pclCam_clr_ptr_(new PointCloud<pcl::PointXYZRGB>),
@@ -31,8 +196,7 @@ pass_filtered_cloud_ptr_(new PointCloud<pcl::PointXYZRGB>) //(new pcl::PointClou
 
 void ObjectFinder::initializeSubscribers() {
     ROS_INFO("Initializing Subscribers");
-    //pointcloud_subscriber_ = nh_.subscribe("/head_camera/depth_registered/points", 1, &ObjectFinder::headcamCB, this);
-    pointcloud_subscriber_ = nh_.subscribe("/camera/depth_registered/points", 1, &ObjectFinder::headcamCB, this); //MERRY SPECIFIC
+    pointcloud_subscriber_ = nh_.subscribe("/head_camera/depth_registered/points", 1, &ObjectFinder::headcamCB, this);
     // add more subscribers here, as needed
 }
 
@@ -181,9 +345,8 @@ Eigen::Affine3f ObjectFinder::compute_affine_cam_wrt_torso_lift_link(void) {
     //from Fetch bag: 
     //Eigen::Quaternionf q;
     cout << "enter tilt angle (0.897=head_tilt_joint for fetch data): ";
-    float angle =1.0;
-    ROS_INFO("using tilt angle %f",angle);
-    //cin>>angle;
+    float angle;
+    cin>>angle;
     Eigen::Quaternionf q(Eigen::AngleAxisf{angle, Eigen::Vector3f
         {0, 1, 0}});
     //    outputAsMatrix(Eigen::Quaterniond{Eigen::AngleAxisd{angle, Eigen::Vector3d{0, 1, 0}}});
@@ -201,34 +364,8 @@ Eigen::Affine3f ObjectFinder::compute_affine_cam_wrt_torso_lift_link(void) {
     R_cam.col(0) = nvec;
     R_cam.col(1) = tvec;
     R_cam.col(2) = bvec;
+
     affine_cam_wrt_torso.linear() = R_cam;
-
-    //MERRY SPECIFIC:
-    tf::TransformListener tfListener;
-    tf::StampedTransform stf_kinect_wrt_base;
-    ROS_INFO("listening for kinect-to-base transform:");
-    bool tferr = true;
-    ROS_INFO("waiting for tf between kinect_pc_frame and base_link...");
-    while (tferr) {
-        tferr = false;
-        try {
-            //The direction of the transform returned will be from the target_frame to the source_frame. 
-            //Which if applied to data, will transform data in the source_frame into the target_frame. 
-            //See tf/CoordinateFrameConventions#Transform_Direction
-            tfListener.lookupTransform("torso", "camera_rgb_optical_frame", ros::Time(0), stf_kinect_wrt_base);
-
-        } catch (tf::TransformException &exception) {
-            ROS_WARN("%s; retrying...", exception.what());
-            tferr = true;
-            ros::Duration(0.5).sleep(); // sleep for half a second
-            ros::spinOnce();
-        }
-    }
-
-    affine_cam_wrt_torso = xformUtils.transformTFToAffine3d(stf_kinect_wrt_base).cast<float>();
-
-    xformUtils.printAffine(affine_cam_wrt_torso.cast<double>());
-
     return affine_cam_wrt_torso;
 }
 
@@ -369,14 +506,12 @@ void ObjectFinder::find_orientation(Eigen::MatrixXf points_mat, float &orientati
 
 void ObjectFinder::blob_finder(vector<float> &x_centroids_wrt_robot, vector<float> &y_centroids_wrt_robot,
         vector<float> &avg_z_heights,
-        vector<float> &npts_blobs,
-        vector<int> &viable_labels) {
+        vector<float> &npts_blobs) {
 
     x_centroids_wrt_robot.clear();
     y_centroids_wrt_robot.clear();
     avg_z_heights.clear();
     npts_blobs.clear();
-    viable_labels_.clear();
     //openCV function to do all the  hard work
     int nLabels = connectedComponents(g_bw_img, g_labelImage, 8); //4 vs 8 connected regions
 
@@ -397,8 +532,8 @@ void ObjectFinder::blob_finder(vector<float> &x_centroids_wrt_robot, vector<floa
     }
 
     //compute centroids
-    for (int r = 0; r < g_dst.rows; ++r) {
-        for (int c = 0; c < g_dst.cols; ++c) {
+    for (int r = 0; r < dst.rows; ++r) {
+        for (int c = 0; c < dst.cols; ++c) {
             int label = g_labelImage.at<int>(r, c);
             temp_y_centroids[label] += c; //robot y-direction corresponds to columns--will negate later
             temp_x_centroids[label] += r; //robot x-direction corresponds to rows--will negate later
@@ -419,18 +554,15 @@ void ObjectFinder::blob_finder(vector<float> &x_centroids_wrt_robot, vector<floa
     //filter to  keep only blobs that are high enough and large enough
     for (int label = 0; label < nLabels; ++label) {
         ROS_INFO("label %d has %d points and  avg height %f:", label, (int) temp_npts_blobs[label], temp_avg_z_heights[label]);
-        if (temp_avg_z_heights[label] > MIN_BLOB_AVG_HEIGHT) { //rejects the table surface
+        if (temp_avg_z_heights[label] > MIN_BLOB_AVG_HEIGHT) {
             if (temp_npts_blobs[label] > MIN_BLOB_PIXELS) {
                 //ROS_INFO("label %d has %f points:",label,temp_npts_blobs[label]);
                 x_centroids_wrt_robot.push_back(temp_x_centroids[label]);
                 y_centroids_wrt_robot.push_back(temp_y_centroids[label]);
                 avg_z_heights.push_back(temp_avg_z_heights[label]);
                 npts_blobs.push_back(temp_npts_blobs[label]);
-                viable_labels.push_back(label);
-                ROS_INFO("label %d has %f points, avg height %f and centroid %f, %f:",label,temp_npts_blobs[label],temp_avg_z_heights[label],
-                        temp_x_centroids[label],temp_y_centroids[label]);    
-                ROS_INFO("saving this blob");
-                
+                //ROS_INFO("label %d has %f points, avg height %f and centroid %f, %f:",label,temp_npts_blobs[label],temp_avg_z_heights[label],
+                //        temp_x_centroids[label],temp_y_centroids[label]);                    
             }
         }
     }
@@ -438,30 +570,31 @@ void ObjectFinder::blob_finder(vector<float> &x_centroids_wrt_robot, vector<floa
 
     //colorize the regions and display them:
     //also compute centroids;
-    nLabels = viable_labels.size(); //new number of labels, after filtering
-    ROS_INFO("found %d viable labels ",nLabels);
-    /*
+    nLabels = npts_blobs.size(); //new number of labels, after filtering
     std::vector<Vec3b> colors(nLabels);
     colors[0] = Vec3b(0, 0, 0); //make the background black
     //assign random color to each region label
     for (int label = 1; label < nLabels; ++label) {
         colors[label] = Vec3b((rand()&255), (rand()&255), (rand()&255));
     }
-     * */
 
+    //convert to robot coords:
+    //convert to dpixel_x, dpixel_y w/rt image centroid, scale by pixels/m, and add offset from PCL cropping, x,y
+    for (int label = 0; label < nLabels; ++label) {
+        x_centroids_wrt_robot[label] = ((dst.rows / 2) - x_centroids_wrt_robot[label]) / PIXELS_PER_METER + (MIN_X + MAX_X) / 2.0;
+        y_centroids_wrt_robot[label] = ((dst.cols / 2) - y_centroids_wrt_robot[label]) / PIXELS_PER_METER + (MIN_Y + MAX_Y) / 2.0;
+        ROS_INFO("label %d has %d points, avg height %f, and centroid w/rt robot: %f, %f:", label, (int) npts_blobs[label], avg_z_heights[label], x_centroids_wrt_robot[label], y_centroids_wrt_robot[label]);
+    }
+   //xxx
         g_orientations.clear();
         g_vec_of_quat.clear();
         Eigen::Vector3f e_pt;
-        
-	for(int label = 0; label < nLabels; label++){
-            cout<<"label = "<<label<<endl;
+	for(int label = 1; label < nLabels; label++){
 		int npts_blob = npts_blobs[label];
-                cout<<"npts_blob = "<<npts_blob<<endl;
-                /* FIX ME!!
 		Eigen::MatrixXf blob(3, npts_blob);
 		int col_num = 0;
-		for (int r = 0; r < g_dst.rows; ++r) {
-			for (int c = 0; c < g_dst.cols; ++c){
+		for (int r = 0; r < dst.rows; ++r) {
+			for (int c = 0; c < dst.cols; ++c){
 				int label_num = g_labelImage.at<int>(r,c);
 				if(label_num == label){
 					e_pt<<c,r,0.0;
@@ -470,34 +603,15 @@ void ObjectFinder::blob_finder(vector<float> &x_centroids_wrt_robot, vector<floa
 				}
 			}
 		}
-                 * */
 		float angle;
 		geometry_msgs::Quaternion quat;
-                quat = xformUtils.convertPlanarPsi2Quaternion(angle);
-		//find_orientation(blob, angle, quat);  //FIX ME!!
+		find_orientation(blob, angle, quat);
 		//add pi/2 to factor in rotated camera frame wrt robot
-                angle=0.0; //FIX ME!!
 		g_orientations.push_back(angle);
 		g_vec_of_quat.push_back(quat);
         }
-        
-    //convert to robot coords:
-    //convert to dpixel_x, dpixel_y w/rt image centroid, scale by pixels/m, and add offset from PCL cropping, x,y
-        ROS_INFO("converting pixel coords to robot coords...");
-        cout<<"size of x_centroids_wrt_robot: "<<x_centroids_wrt_robot.size()<<endl;
-    for (int label = 0; label < nLabels; ++label) {
-        x_centroids_wrt_robot[label] = ((g_dst.rows / 2) - x_centroids_wrt_robot[label]) / PIXELS_PER_METER + (MIN_X + MAX_X) / 2.0;
-        y_centroids_wrt_robot[label] = ((g_dst.cols / 2) - y_centroids_wrt_robot[label]) / PIXELS_PER_METER + (MIN_Y + MAX_Y) / 2.0;
-        ROS_INFO("label %d has %d points, avg height %f, centroid w/rt robot: %f, %f,  angle %f:", label, (int) npts_blobs[label], avg_z_heights[label], x_centroids_wrt_robot[label], 
-                y_centroids_wrt_robot[label],g_orientations[label]);
-    }
-   //xxx
-
-    cv::namedWindow("Image", WINDOW_AUTOSIZE);
-    cv::imshow("Image", g_bw_img);
     
-    cv::namedWindow("Connected Parts", WINDOW_AUTOSIZE);
-    cv::imshow("Connected Parts", g_dst);
+
 }
 
 
@@ -540,7 +654,6 @@ void ObjectFinder::convert_transformed_cloud_to_2D(pcl::PointCloud<pcl::PointXYZ
         }
 
     }
-    ROS_INFO("Transformed Cloud has been converted to 2D");
 }
 
 
@@ -591,8 +704,8 @@ void ObjectFinder::executeCB(const actionlib::SimpleActionServer<object_finder::
     //specify opposite corners of a box to box-filter the transformed points
     //magic numbers are at top of this program
     Eigen::Vector4f box_pt_min, box_pt_max;
-    box_pt_min << MIN_X, MIN_Y, table_height +MIN_DZ, 0; //from MIN_DZ above table top
-    box_pt_max << MAX_X, MAX_Y, table_height +MAX_DZ, 0;
+    box_pt_min << MIN_X, MIN_Y, table_height + 0.01, 0; //1cm above table top
+    box_pt_max << MAX_X, MAX_Y, MAX_Z, 0;
 
     //find which points in the transformed cloud are within the specified box
     //result is in "indices"
@@ -611,19 +724,17 @@ void ObjectFinder::executeCB(const actionlib::SimpleActionServer<object_finder::
     //also, expect centroids w/rt robot torso in g_x_centroids_wrt_robot,g_y_centroids_wrt_robot
     // and area (num pixels) in g_npts_blobs[label]
     //
-    blob_finder(g_x_centroids_wrt_robot, g_y_centroids_wrt_robot, g_avg_z_heights, g_npts_blobs,viable_labels_);
+    blob_finder(g_x_centroids_wrt_robot, g_y_centroids_wrt_robot, g_avg_z_heights, g_npts_blobs);
 
     result_.object_id = goal->object_id; //by default, set the "found" object_id to the "requested" object_id
     //note--finder might change this ID, if warranted
-    geometry_msgs::PoseStamped fake_object_pose;
-    
 
     switch (object_id) {
             //coordinator::ManipTaskResult::FAILED_PERCEPTION:
-        case part_codes::part_codes::GEARBOX_BOTTOM:
+        case part_codes::part_codes::GEARBOX_TOP:
             //specialized functions to find objects of interest:
 
-            found_object = find_gearbox_bottom(g_x_centroids_wrt_robot, g_y_centroids_wrt_robot, g_avg_z_heights, g_npts_blobs, table_height, object_poses); //special case for gearbox_top; WRITE ME!
+            found_object = find_gearbox_top(g_x_centroids_wrt_robot, g_y_centroids_wrt_robot, g_avg_z_heights, g_npts_blobs, table_height, object_poses); //special case for gearbox_top; WRITE ME!
             if (found_object) {
                 ROS_INFO("found gearbox_top objects");
                 result_.found_object_code = object_finder::objectFinderResult::OBJECT_FOUND;
@@ -637,8 +748,24 @@ void ObjectFinder::executeCB(const actionlib::SimpleActionServer<object_finder::
                 ROS_WARN("could not find requested object");
                 object_finder_as_.setAborted(result_);
             }
-            break;         
+            break;
             
+        case part_codes::part_codes::TOTE:
+            found_object = find_totes(g_x_centroids_wrt_robot, g_y_centroids_wrt_robot, g_avg_z_heights, g_npts_blobs, table_height, object_poses); 
+            if (found_object) {
+                ROS_INFO("found tote objects");
+                result_.found_object_code = object_finder::objectFinderResult::OBJECT_FOUND;
+                result_.object_poses.clear();
+                int nposes = object_poses.size();
+                for (int ipose = 0; ipose < nposes; ipose++) {
+                    result_.object_poses.push_back(object_poses[ipose]);
+                }
+                object_finder_as_.setSucceeded(result_);
+            } else {
+                ROS_WARN("could not find requested object");
+                object_finder_as_.setAborted(result_);
+            }            
+            break;
 
         default:
             ROS_WARN("this object ID is not implemented");
@@ -648,57 +775,73 @@ void ObjectFinder::executeCB(const actionlib::SimpleActionServer<object_finder::
 
 }
 
+int main(int argc, char** argv) {
+    ros::init(argc, argv, "object_finder_node"); // name this node 
 
-//Takes in x and y values. Use this equation that I learned in stats of signal processing:
-double ObjectFinder::findOrientation(int labelNum) {
-    std::vector<double> x;
-    std::vector<double> y;
+    ROS_INFO("instantiating the object finder action server: ");
 
-    //Loops through the entire image and 
-    for (int r = 0; r < g_dst.rows; ++r) {
-        for (int c = 0; c < g_dst.cols; ++c) {
-            int label = g_labelImage.at<int>(r, c);
-            if(label == labelNum) {
-                x.push_back(r);
-                y.push_back(Nu - c);
-            }
+    ObjectFinder object_finder_as; // create an instance of the class "ObjectFinder"
+    //tf::TransformListener tfListener;
+    //ROS_INFO("listening for kinect-to-base transform:");
+    //tf::StampedTransform stf_kinect_wrt_base;
+    /*
+    bool tferr = true;
+    ROS_INFO("waiting for tf between kinect_pc_frame and base_link...");
+    while (tferr) {
+        tferr = false;
+        try {
+            //The direction of the transform returned will be from the target_frame to the source_frame. 
+            //Which if applied to data, will transform data in the source_frame into the target_frame. 
+            //See tf/CoordinateFrameConventions#Transform_Direction
+            tfListener.lookupTransform("base_link", "kinect_pc_frame", ros::Time(0), stf_kinect_wrt_base);
+        } catch (tf::TransformException &exception) {
+            ROS_WARN("%s; retrying...", exception.what());
+            tferr = true;
+            ros::Duration(0.5).sleep(); // sleep for half a second
+            ros::spinOnce();
         }
     }
-    double numPoints = x.size();
+    ROS_INFO("kinect to base_link tf is good");
+    object_finder_as.xformUtils_.printStampedTf(stf_kinect_wrt_base);
+    tf::Transform tf_kinect_wrt_base = object_finder_as.xformUtils_.get_tf_from_stamped_tf(stf_kinect_wrt_base);
+    g_affine_kinect_wrt_base = object_finder_as.xformUtils_.transformTFToAffine3f(tf_kinect_wrt_base);
+    cout << "affine rotation: " << endl;
+    cout << g_affine_kinect_wrt_base.linear() << endl;
+    cout << "affine offset: " << g_affine_kinect_wrt_base.translation().transpose() << endl;
+     */
+    ROS_INFO("going into spin");
+    // from here, all the work is done in the action server, with the interesting stuff done within "executeCB()"
+    while (ros::ok()) {
+        ros::spinOnce(); //normally, can simply do: ros::spin();  
+        object_finder_as.pubCloud_.publish(object_finder_as.ros_cloud_); //publish original point-cloud, so it is viewable in rviz        
+        object_finder_as.pubBoxFilt_.publish(object_finder_as.ros_box_filtered_cloud_); //ditto for filtered point cloud   
+        object_finder_as.pubCropFilt_.publish(object_finder_as.ros_crop_filtered_cloud_); //ditto for filtered point cloud   
+        object_finder_as.pubPassFilt_.publish(object_finder_as.ros_pass_filtered_cloud_); //ditto for filtered point cloud   
 
-    double EX    = std::accumulate(x.begin(), x.end(), 0.0)/numPoints;
-    double EY    = std::accumulate(y.begin(), y.end(), 0.0)/numPoints;
-    double EXX   = std::inner_product(x.begin(), x.end(), x.begin(), 0.0)/numPoints;
-    double EXY   = std::inner_product(x.begin(), x.end(), y.begin(), 0.0)/numPoints;
-    double slope = (EXY-(EX*EY)) / (EXX-(EX*EX));
-    
-    return atan2((EXY-(EX*EY)), (EXX-(EX*EX)));
+        ros::Duration(0.1).sleep();
+    }
+
+    return 0;
 }
 
-bool ObjectFinder::find_gearbox_bottom(vector<float> x_centroids_wrt_robot, vector<float> y_centroids_wrt_robot,
-                                       vector<float> avg_z_heights, vector<float> npts_blobs, float table_height,
-                                       vector<geometry_msgs::PoseStamped> &object_poses) {
-
-    //! Here we find the index for a gearbox bottom
-    int idxGearboxBottom = -1;
-
-    idxGearboxBottom = 1;
-
-    if(idxGearboxBottom == -1) {
-        return false;
+bool ObjectFinder::find_gearbox_top(vector<float> x_centroids_wrt_robot, vector<float> y_centroids_wrt_robot,
+        vector<float> avg_z_heights, vector<float> npts_blobs, float table_height,
+        vector<geometry_msgs::PoseStamped> &object_poses) {
+    geometry_msgs::PoseStamped object_pose;
+    object_poses.clear();
+    int n_objects = x_centroids_wrt_robot.size();
+    if (n_objects < 2) return false; //background is object 0
+    object_pose.header.frame_id = "torso_lift_link";
+    for (int i_object = 1; i_object < n_objects; i_object++) {
+        object_pose.pose.position.x = x_centroids_wrt_robot[i_object];
+        object_pose.pose.position.y = y_centroids_wrt_robot[i_object];
+        object_pose.pose.position.z = table_height + TABLE_GRASP_CLEARANCE;
+        //FIX ME!  do not yet have value orientation info
+        object_pose.pose.orientation.x = 0;
+        object_pose.pose.orientation.y = 0;
+        object_pose.pose.orientation.z = 0;
+        object_pose.pose.orientation.w = 1;
+        object_poses.push_back(object_pose);
     }
-    //! Here we determine the orientation of this block and store it in "object_pose"
-    double angle = findOrientation(idxGearboxBottom);
-    ROS_INFO("Angle of the gearbox bottom with label %d: %f", idxGearboxBottom, angle);
-
-    geometry_msgs::PoseStamped test;                                        
-    //! Populate object_pose.orientation (quaternion) and object_pose.position (x,y,z) and object_pose.header
-    test.header.frame_id = "torso"; //? MERRY SPECIFIC
-    test.pose.orientation = xformUtils.convertPlanarPsi2Quaternion(angle);
-    test.pose.position.x = x_centroids_wrt_robot[idxGearboxBottom];
-    test.pose.position.y = y_centroids_wrt_robot[idxGearboxBottom];
-    test.pose.position.z = table_height;
-
-    object_poses.push_back(test);
     return true;
 }
