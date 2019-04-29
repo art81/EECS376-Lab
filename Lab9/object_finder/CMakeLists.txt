@@ -36,7 +36,7 @@ cs_add_executable(example_object_finder_action_client src/example_object_finder_
 #cs_add_executable(example_tote_finder_action_client src/example_tote_finder_action_client.cpp)
 #the following is required, if desire to link a node in this package with a library created in this same package
 # edit the arguments to reference the named node and named library within this package
-target_link_libraries(object_finder_main object_finder_as)
+target_link_libraries(object_finder_main object_finder_as ${OpenCV_LIBS})
 
 cs_install()
 cs_export()

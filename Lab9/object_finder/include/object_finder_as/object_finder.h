@@ -58,9 +58,8 @@ const float TABLE_TOP_MIN = -0.1;
 const float TABLE_TOP_MAX = 0.2; //0.05;
 */
 
-//Chris's numbers:
 const float MIN_X = 0.25; //include points starting 0.4m in front of robot
-const float MAX_X = 0.8; //include points out to 0.9m in front of robot
+const float MAX_X = 1.0; //include points out to 0.9m in front of robot
 const float MIN_Y = -0.7; //include points starting -0.5m to left of robot
 const float MAX_Y = 0.7; //include points up to 0.5m to right of robot
 const float MIN_DZ = 0.0;//0.02; //box filter from this height above the table top

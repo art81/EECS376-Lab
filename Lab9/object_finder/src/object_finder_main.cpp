@@ -36,6 +36,9 @@ int main(int argc, char** argv) {
      */
     ROS_INFO("going into spin");
     // from here, all the work is done in the action server, with the interesting stuff done within "executeCB()"
+
+    cv::namedWindow("BW_IMG", WINDOW_AUTOSIZE);
+    cv::namedWindow("Connected Parts", WINDOW_AUTOSIZE);
     while (ros::ok()) {
         ros::spinOnce(); //normally, can simply do: ros::spin();  
 
@@ -46,6 +49,7 @@ int main(int argc, char** argv) {
         object_finder_as.pubCropFilt_.publish(object_finder_as.ros_crop_filtered_cloud_); //ditto for filtered point cloud   
         object_finder_as.pubPassFilt_.publish(object_finder_as.ros_pass_filtered_cloud_); //ditto for filtered point cloud   
 
+        waitKey(0);
         ros::Duration(0.1).sleep();
     }
 

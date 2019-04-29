@@ -25,7 +25,7 @@ pass_filtered_cloud_ptr_(new PointCloud<pcl::PointXYZRGB>) //(new pcl::PointClou
         ROS_INFO("waiting...");
         ros::spinOnce();
         ros::Duration(0.5).sleep();
-        got_headcam_image_ = true;
+        //got_headcam_image_ = true;
     }
 }
 
@@ -141,6 +141,7 @@ float ObjectFinder::find_table_height(pcl::PointCloud<pcl::PointXYZRGB>::Ptr inp
             z_table = z + 0.5 * dz;
         }
     }
+    z_table = z_table + 0.02; //! Merry Specific Fix this!!!!!!!!!!!!!!!!!!!!!
     ROS_INFO("max pts %d at height z= %f", npts_max, z_table);
 
     pass.setFilterLimits(z_table - 0.5 * dz, z_table + 0.5 * dz);
@@ -479,7 +480,7 @@ void ObjectFinder::blob_finder(vector<float> &x_centroids_wrt_robot, vector<floa
                 angle=0.0; //FIX ME!!
 		g_orientations.push_back(angle);
 		g_vec_of_quat.push_back(quat);
-        }
+    }
         
     //convert to robot coords:
     //convert to dpixel_x, dpixel_y w/rt image centroid, scale by pixels/m, and add offset from PCL cropping, x,y
@@ -491,13 +492,30 @@ void ObjectFinder::blob_finder(vector<float> &x_centroids_wrt_robot, vector<floa
         ROS_INFO("label %d has %d points, avg height %f, centroid w/rt robot: %f, %f,  angle %f:", label, (int) npts_blobs[label], avg_z_heights[label], x_centroids_wrt_robot[label], 
                 y_centroids_wrt_robot[label],g_orientations[label]);
     }
-   //xxx
+    //xxx
+    //! Fix this Newman
 
-    cv::namedWindow("Image", WINDOW_AUTOSIZE);
-    cv::imshow("Image", g_bw_img);
-    
-    cv::namedWindow("Connected Parts", WINDOW_AUTOSIZE);
-    cv::imshow("Connected Parts", g_dst);
+    //colorize the regions and display them:
+    if(nLabels > 0) {
+    	std::vector<Vec3b> colors(nLabels);
+	    colors[0] = Vec3b(0, 0, 0);//background
+	    //assign random color to each region label
+	    for(int label = 1; label < nLabels; ++label){
+	        colors[label] = Vec3b( (rand()&255), (rand()&255), (rand()&255) );
+	    }
+	    
+	    //for display image, assign colors to regions
+	    for(int r = 0; r < g_dst.rows; ++r){
+	        for(int c = 0; c < g_dst.cols; ++c){
+	            int label = g_labelImage.at<int>(r, c);
+	            Vec3b &pixel = g_dst.at<Vec3b>(r, c);
+	            pixel = colors[label];
+	        }
+		}
+    }
+
+	cv::imshow("BW_IMG", g_bw_img);
+	cv::imshow("Connected Parts", g_dst);
 }
 
 
